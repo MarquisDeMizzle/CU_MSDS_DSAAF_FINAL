@@ -1,0 +1,83 @@
+---
+title: "Week 5"
+output:
+  pdf_document: default
+  html_document: default
+date: '2022-06-17'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library Imports
+```{r libin}
+library(tidyverse)
+library(lubridate)
+```
+
+## Data Import
+NYC Shooting Data
+```{r dataget}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+raw_data <- read_csv(url_in)
+```
+
+Properly format the date column and add Month and Year columns
+```{r format}
+formatted_data <- raw_data %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE), Month = as.integer(month(OCCUR_DATE)), Year = as.integer(year(OCCUR_DATE)))
+```
+
+First let's look at the raw number of shootings per year
+```{r shootYear}
+shootByYear = formatted_data %>% group_by(Year) %>% summarize(shootings = n())
+ggplot(shootByYear, aes(x = Year, y = shootings)) + geom_bar(stat = 'identity') + ggtitle('NYC Shootings by Year') +
+  ylab('# Shootings')
+```
+General downward trend until 2020. What does a break down by month look like?
+```{r shootByMonth}
+shootByMonth = formatted_data %>% group_by(Month) %>% summarize(shootings = n())
+ggplot(shootByMonth, aes(x = Month, y = shootings)) + geom_bar(stat = 'identity') +
+  scale_x_continuous(breaks = 1:12) + ggtitle('Distribution of NYC Shootings by Month') +
+  ylab('# Shootings')
+```
+
+Interesting peak of shootings in the summer.  Let's take one more temporal look at the data, broken down by time of day:
+```{r shootTime}
+shootByHour = formatted_data %>% mutate(Hour = floor(hour(OCCUR_TIME)))
+ggplot(shootByHour, aes(x = Hour)) + geom_bar() +
+  scale_x_continuous(breaks = 0:23) + ggtitle('NYC Shootings by Hour of Day') + ylab('# Shootings')
+```
+Perhaps unsurprisingly, most shootings occur at night with the smallest number occurring in the dawn hours.  Interestingly, last call for alcohol is at 4am in New York City (https://en.wikipedia.org/wiki/Last_call#:~:text=The%204%20a.m.%20time%20applies,%2C%20Buffalo%2C%20and%20Saratoga%20Springs.), could this be responsible for the steep fall off? Impossible to say without more data.
+
+## Spatial analysis
+Now let's look at some spatial analysis of the data
+```{r spatial}
+ggplot(formatted_data, aes(x = Longitude, y = Latitude, xmin = -74.35, xmax = -73.6)) +
+  geom_point(size = 0.2) + ggtitle('Geographical Distribution of NYC Shootings')
+```
+Just by plotting the coordinates of the data, we can see recognizable shapes of NYC.  Staten island in the bottom left, Rockaway Beach bottom right, the squared-off north-eastern edge of central park north and just to the east of center, and to the east of that the curve of the Harlem river separating Manhattan from the Bronx. What do the numbers look like by borough?
+
+```{r byBorough}
+ggplot(formatted_data, aes(x = BORO)) + geom_bar() + xlab('Borough') + ylab('# Shootings') + ggtitle('Shootings by Borough')
+```
+
+Brooklyn and the Bronx are the clear leaders in the raw number of shootings, with Staten Island by far experiencing the least.  Without population data we really can't drill into this more.  Let's explore the fatality rate.
+
+```{r fatality}
+formatted_data %>% select(Fatal = STATISTICAL_MURDER_FLAG) %>%
+  ggplot(aes(x = Fatal, fill = Fatal)) + geom_bar() + ylab('# Shootings') + ggtitle('NYC Shooting Fatality')
+```
+
+So we're looking at about 5 fatalities out of every 25 shootings, or about 20%.  Any difference by borough?
+```{r fatalityByBorough}
+fatalityByBorough = formatted_data %>% group_by(borough = BORO) %>% summarize(fatal = sum(case_when(STATISTICAL_MURDER_FLAG == TRUE ~ 1, TRUE ~ 0)), total = n(), pct = 100*fatal/total)
+ggplot(fatalityByBorough, aes(x = borough, y = pct)) + 
+  geom_bar(stat = 'identity') + ylab('Fatality Rate (%)') +
+  xlab('Borough') + ggtitle('Fatality Rate by Borough')
+```
+
+Manhattan has the highest fatality rate and Staten Island the lowest, but not a lot of variance from the 20% mark.
+
+## Potential Biases
+There could be a number of factors influencing the data we see.  Underlying economic conditions could make certain areas of the city inherently less safe.  Fatality rates could be higher due to less accessibility of health care facilities.  Without more information, we really don't know.
